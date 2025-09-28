@@ -1,0 +1,2686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D三体问题演示器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 25px;
+            min-width: 320px;
+            max-width: 600px;
+            width: 380px;
+            min-height: 200px;
+            max-height: 85vh;
+            height: auto;
+            overflow-y: auto;
+            border: 2px solid rgba(100, 200, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            resize: both;
+            overflow: auto;
+        }
+
+        #controls:hover {
+            border-color: rgba(100, 200, 255, 0.5);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        /* 自定义调节大小手柄 */
+        #controls::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, transparent 0%, transparent 30%, rgba(100, 200, 255, 0.6) 30%, rgba(100, 200, 255, 0.6) 70%, transparent 70%);
+            cursor: nw-resize;
+            border-bottom-right-radius: 18px;
+            transition: all 0.2s ease;
+        }
+
+        #controls::before {
+            content: '';
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            width: 10px;
+            height: 10px;
+            background: rgba(100, 200, 255, 0.4);
+            border-radius: 2px;
+            pointer-events: none;
+            transition: all 0.2s ease;
+        }
+
+        /* 悬停时增强手柄视觉效果 */
+        #controls:hover::after {
+            background: linear-gradient(135deg, transparent 0%, transparent 25%, rgba(100, 200, 255, 0.8) 25%, rgba(100, 200, 255, 0.8) 75%, transparent 75%);
+            width: 22px;
+            height: 22px;
+        }
+
+        #controls:hover::before {
+            background: rgba(100, 200, 255, 0.7);
+            width: 12px;
+            height: 12px;
+        }
+
+        /* 添加额外的调节大小指示器 */
+        .resize-indicator {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            width: 14px;
+            height: 14px;
+            pointer-events: none;
+            z-index: 1001;
+        }
+
+        .resize-indicator::before,
+        .resize-indicator::after {
+            content: '';
+            position: absolute;
+            background: rgba(100, 200, 255, 0.5);
+            border-radius: 1px;
+        }
+
+        .resize-indicator::before {
+            width: 2px;
+            height: 10px;
+            right: 6px;
+            top: 2px;
+            transform: rotate(45deg);
+        }
+
+        .resize-indicator::after {
+            width: 10px;
+            height: 2px;
+            right: 2px;
+            top: 6px;
+            transform: rotate(45deg);
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* 响应式布局 - 当面板宽度较小时调整布局 */
+        @media (max-width: 400px), #controls[style*="width: 3"] {
+            .control-group {
+                padding: 10px;
+                margin-bottom: 15px;
+            }
+            
+            .button-group {
+                flex-direction: column;
+                gap: 5px;
+            }
+            
+            button {
+                font-size: 12px;
+                padding: 8px 12px;
+            }
+            
+            label {
+                font-size: 13px;
+            }
+        }
+
+        /* 当面板很窄时的特殊样式 */
+        .control-group.compact {
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+
+        .control-group.compact label {
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .control-group.compact button {
+            font-size: 11px;
+            padding: 6px 10px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 15px;
+            color: #ffffff;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 8px;
+            background: linear-gradient(90deg, rgba(100, 200, 255, 0.3), rgba(100, 200, 255, 0.6));
+            border-radius: 4px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]:hover {
+            background: linear-gradient(90deg, rgba(100, 200, 255, 0.5), rgba(100, 200, 255, 0.8));
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #64c8ff, #4a9eff);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(100, 200, 255, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(100, 200, 255, 0.6);
+        }
+            height: 18px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .value-display {
+            min-width: 70px;
+            text-align: right;
+            font-size: 13px;
+            color: #64c8ff;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        button {
+            background: linear-gradient(135deg, #64c8ff, #4a9eff);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            margin: 3px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(100, 200, 255, 0.3);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #4a9eff, #64c8ff);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(100, 200, 255, 0.5);
+        }
+
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(100, 200, 255, 0.3);
+        }
+
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .mass-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mass-control {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .mass-control label {
+            font-size: 12px;
+            color: #ccc;
+            margin-bottom: 3px;
+        }
+
+        .time-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .speed-display {
+            font-size: 12px;
+            color: #4CAF50;
+            min-width: 80px;
+            text-align: center;
+            background: rgba(76, 175, 80, 0.2);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+
+        #info {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(15px);
+            color: #ffffff;
+            padding: 20px;
+            border-radius: 15px;
+            font-size: 13px;
+            line-height: 1.6;
+            max-width: 350px;
+            border: 2px solid rgba(100, 200, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            z-index: 999;
+        }
+
+        #info strong {
+            color: #64c8ff;
+            font-size: 16px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        
+        <div id="controls">
+            <h3 style="margin-bottom: 15px; color: #4CAF50;">3D三体问题演示器控制面板</h3>
+            
+            <div class="control-group">
+                <div class="button-group">
+                    <button id="playPause">暂停</button>
+                    <button id="reset">重置</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>时间控制</label>
+                <div class="time-controls">
+                    <button id="slowDown">减速</button>
+                    <button id="normalSpeed">正常</button>
+                    <button id="speedUp">加速</button>
+                </div>
+                <div class="speed-display" id="speedDisplay">速度: 1.0x</div>
+            </div>
+
+            <div class="control-group">
+                <label>万有引力常数 (×10⁻¹¹ m³/kg/s²)</label>
+                <div class="control-row">
+                    <input type="range" id="gravity" min="1" max="20" step="0.1" value="6.67">
+                    <span class="value-display" id="gravityValue">6.67</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>时间步长 (天)</label>
+                <div class="control-row">
+                    <input type="range" id="timeStep" min="0.1" max="10" step="0.1" value="1">
+                    <span class="value-display" id="timeStepValue">1.0</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>时间倍速</label>
+                <div class="control-row">
+                    <input type="range" id="timeSpeed" min="0.1" max="10" step="0.1" value="1">
+                    <span class="value-display" id="timeSpeedValue">1.0</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>轨迹长度 (天)</label>
+                <div class="control-row">
+                    <input type="range" id="trailLength" min="30" max="1095" step="30" value="365">
+                    <span class="value-display" id="trailValue">365</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>轨迹设置</label>
+                <div class="trail-controls">
+                    <div class="control-row">
+                        <label>轨迹粗细</label>
+                        <select id="trailThickness" style="padding: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 5px; color: white; font-size: 14px;">
+                            <option value="1">细线</option>
+                            <option value="2" selected>中等</option>
+                            <option value="4">粗线</option>
+                        </select>
+                    </div>
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox" id="showAllTrails" checked style="margin-right: 8px;">
+                            显示所有轨迹
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>天体质量控制 (太阳质量倍数)</label>
+                <div class="mass-controls">
+                    <div class="mass-control">
+                        <label>天体1质量: <span id="mass1Value">1.0</span> M☉</label>
+                        <input type="range" id="mass1" min="0.1" max="10" step="0.1" value="1">
+                    </div>
+                    <div class="mass-control">
+                        <label>天体2质量: <span id="mass2Value">1.0</span> M☉</label>
+                        <input type="range" id="mass2" min="0.1" max="10" step="0.1" value="1">
+                    </div>
+                    <div class="mass-control">
+                        <label>天体3质量: <span id="mass3Value">1.0</span> M☉</label>
+                        <input type="range" id="mass3" min="0.1" max="10" step="0.1" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>预设配置</label>
+                <div class="button-group">
+                    <button onclick="simulator.loadPreset('triangle')">等边三角形</button>
+                    <button onclick="simulator.loadPreset('linear')">线性排列</button>
+                    <button onclick="simulator.loadPreset('binary')">双星+行星</button>
+                    <button onclick="simulator.loadPreset('solar')">太阳系模型</button>
+                    <button onclick="simulator.loadPreset('jupiter')">木星系统</button>
+                    <button onclick="simulator.loadPreset('alpha')">半人马座α</button>
+                    <button onclick="simulator.loadPreset('random')">随机配置</button>
+                </div>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button id="customConfig">自定义配置</button>
+                    <button id="saveCurrentConfig">保存当前配置</button>
+                </div>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button id="exportConfigs">导出配置</button>
+                    <button id="importConfigs">导入配置</button>
+                    <input type="file" id="configFileInput" accept=".json" style="display: none;">
+                </div>
+            </div>
+            <div class="resize-indicator"></div>
+        </div>
+
+        <!-- 自定义配置对话框 -->
+        <div id="customConfigDialog" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 20, 40, 0.95)); border: 2px solid #00ffff; border-radius: 15px; padding: 25px; z-index: 1000; color: white; min-width: 650px; max-width: 85vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0, 255, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);">
+            <!-- 关闭按钮 -->
+            <button onclick="simulator.hideCustomConfigDialog()" style="position: absolute; top: 15px; right: 15px; background: rgba(255, 0, 0, 0.8); color: white; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; z-index: 1001;" onmouseover="this.style.background='rgba(255, 0, 0, 1)'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='rgba(255, 0, 0, 0.8)'; this.style.transform='scale(1)'">×</button>
+            
+            <div style="display: flex; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid rgba(0, 255, 255, 0.3);">
+                <div style="width: 4px; height: 30px; background: linear-gradient(to bottom, #00ffff, #0088ff); margin-right: 15px; border-radius: 2px;"></div>
+                <h3 style="color: #00ffff; margin: 0; font-size: 24px; text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);">高级自定义配置</h3>
+            </div>
+            
+            <!-- 配置信息 -->
+            <div style="margin-bottom: 25px; background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 10px; padding: 20px;">
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <div style="width: 3px; height: 20px; background: #00ffff; margin-right: 10px; border-radius: 2px;"></div>
+                    <h4 style="color: #00ffff; margin: 0; font-size: 16px;">基本信息</h4>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px; align-items: start;">
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">配置名称</label>
+                        <input type="text" id="configName" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'">
+                    </div>
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">配置描述</label>
+                        <textarea id="configDescription" placeholder="描述这个配置的特点..." style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; height: 70px; resize: vertical; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 全局物理参数 -->
+            <div style="margin-bottom: 25px; background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 10px; padding: 20px;">
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <div style="width: 3px; height: 20px; background: #00ffff; margin-right: 10px; border-radius: 2px;"></div>
+                    <h4 style="color: #00ffff; margin: 0; font-size: 16px;">全局物理参数</h4>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">引力常数 G</label>
+                        <input type="number" id="gravityConstant" value="1.0" step="0.1" min="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'">
+                    </div>
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">时间步长</label>
+                        <input type="number" id="timeStep" value="0.01" step="0.001" min="0.001" max="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'">
+                    </div>
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">轨迹长度</label>
+                        <input type="number" id="trailLength" value="1000" step="100" min="100" max="5000" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'">
+                    </div>
+                    <div>
+                        <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">粒子数量</label>
+                        <input type="number" id="particleCount" value="100" step="10" min="0" max="500" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 天体配置 -->
+            <div id="bodiesConfig">
+                <div style="margin-bottom: 25px; background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 10px; padding: 20px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 3px; height: 20px; background: #ff4444; margin-right: 10px; border-radius: 2px;"></div>
+                        <h4 style="color: #ff4444; margin: 0; font-size: 16px;">天体1配置</h4>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">质量(太阳质量)</label>
+                            <input type="number" id="body1Mass" value="1.0" step="0.1" min="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">半径倍数</label>
+                            <input type="number" id="body1RadiusMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">颜色</label>
+                            <input type="color" id="body1Color" value="#ff4444" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255, 68, 68, 0.5); background: rgba(255,255,255,0.1); cursor: pointer;">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 X</label>
+                            <input type="number" id="body1X" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Y</label>
+                            <input type="number" id="body1Y" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Z</label>
+                            <input type="number" id="body1Z" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 X</label>
+                            <input type="number" id="body1VX" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Y</label>
+                            <input type="number" id="body1VY" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Z</label>
+                            <input type="number" id="body1VZ" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">发光强度</label>
+                            <input type="number" id="body1EmissiveIntensity" value="0.3" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">光泽度</label>
+                            <input type="number" id="body1Shininess" value="100" step="10" min="0" max="1000" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">轨迹透明度</label>
+                            <input type="number" id="body1TrailOpacity" value="0.8" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255, 68, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#ff4444'; this.style.boxShadow='0 0 10px rgba(255, 68, 68, 0.3)'" onblur="this.style.borderColor='rgba(255, 68, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 25px; background: rgba(68, 255, 68, 0.05); border: 1px solid rgba(68, 255, 68, 0.3); border-radius: 10px; padding: 20px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 3px; height: 20px; background: #44ff44; margin-right: 10px; border-radius: 2px;"></div>
+                        <h4 style="color: #44ff44; margin: 0; font-size: 16px;">天体2配置</h4>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">质量(太阳质量)</label>
+                            <input type="number" id="body2Mass" value="1.0" step="0.1" min="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">半径倍数</label>
+                            <input type="number" id="body2RadiusMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">颜色</label>
+                            <input type="color" id="body2Color" value="#44ff44" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(68, 255, 68, 0.5); background: rgba(255,255,255,0.1); cursor: pointer;">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 X</label>
+                            <input type="number" id="body2X" value="2" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Y</label>
+                            <input type="number" id="body2Y" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Z</label>
+                            <input type="number" id="body2Z" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 X</label>
+                            <input type="number" id="body2VX" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Y</label>
+                            <input type="number" id="body2VY" value="0.02" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Z</label>
+                            <input type="number" id="body2VZ" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">发光强度</label>
+                            <input type="number" id="body2EmissiveIntensity" value="0.3" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">光泽度</label>
+                            <input type="number" id="body2Shininess" value="100" step="10" min="0" max="1000" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">轨迹透明度</label>
+                            <input type="number" id="body2TrailOpacity" value="0.8" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 255, 68, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#44ff44'; this.style.boxShadow='0 0 10px rgba(68, 255, 68, 0.3)'" onblur="this.style.borderColor='rgba(68, 255, 68, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 25px; background: rgba(68, 68, 255, 0.05); border: 1px solid rgba(68, 68, 255, 0.3); border-radius: 10px; padding: 20px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 3px; height: 20px; background: #4444ff; margin-right: 10px; border-radius: 2px;"></div>
+                        <h4 style="color: #4444ff; margin: 0; font-size: 16px;">天体3配置</h4>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">质量(太阳质量)</label>
+                            <input type="number" id="body3Mass" value="1.0" step="0.1" min="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">半径倍数</label>
+                            <input type="number" id="body3RadiusMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">颜色</label>
+                            <input type="color" id="body3Color" value="#4444ff" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(68, 68, 255, 0.5); background: rgba(255,255,255,0.1); cursor: pointer;">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 X</label>
+                            <input type="number" id="body3X" value="-2" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Y</label>
+                            <input type="number" id="body3Y" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">位置 Z</label>
+                            <input type="number" id="body3Z" value="0" step="0.1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 X</label>
+                            <input type="number" id="body3VX" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Y</label>
+                            <input type="number" id="body3VY" value="-0.02" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">速度 Z</label>
+                            <input type="number" id="body3VZ" value="0" step="0.01" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">发光强度</label>
+                            <input type="number" id="body3EmissiveIntensity" value="0.3" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">光泽度</label>
+                            <input type="number" id="body3Shininess" value="100" step="10" min="0" max="1000" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                        <div>
+                            <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">轨迹透明度</label>
+                            <input type="number" id="body3TrailOpacity" value="0.8" step="0.1" min="0" max="1" style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(68, 68, 255, 0.5); border-radius: 8px; color: white; font-size: 14px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#4444ff'; this.style.boxShadow='0 0 10px rgba(68, 68, 255, 0.3)'" onblur="this.style.borderColor='rgba(68, 68, 255, 0.5)'; this.style.boxShadow='none'">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 导入导出区域 -->
+            <div style="margin-bottom: 25px; background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 10px; padding: 20px;">
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <div style="width: 3px; height: 20px; background: #00ffff; margin-right: 10px; border-radius: 2px;"></div>
+                    <h4 style="color: #00ffff; margin: 0; font-size: 16px;">导入/导出配置</h4>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <button onclick="simulator.exportConfig()" style="background: linear-gradient(135deg, #0066cc, #0088ff); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 102, 204, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0, 102, 204, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0, 102, 204, 0.3)'">导出为JSON文件</button>
+                    <button onclick="document.getElementById('importFile').click()" style="background: linear-gradient(135deg, #cc6600, #ff8800); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(204, 102, 0, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(204, 102, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(204, 102, 0, 0.3)'">从JSON文件导入</button>
+                </div>
+                <input type="file" id="importFile" accept=".json" style="display: none;" onchange="simulator.importConfig(event)">
+                <div style="margin-top: 15px;">
+                    <label style="color: #cccccc; font-size: 14px; display: block; margin-bottom: 8px;">配置JSON（可直接编辑）</label>
+                    <textarea id="configJSON" placeholder="配置的JSON数据将显示在这里..." style="width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(0, 255, 255, 0.5); border-radius: 8px; color: white; height: 120px; resize: vertical; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; transition: all 0.3s ease;" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 10px rgba(0, 255, 255, 0.3)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.5)'; this.style.boxShadow='none'"></textarea>
+                    <div style="margin-top: 10px; display: flex; gap: 10px;">
+                        <button onclick="simulator.loadFromJSON()" style="background: linear-gradient(135deg, #006600, #00aa00); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 2px 6px rgba(0, 102, 0, 0.3);" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 3px 8px rgba(0, 102, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 6px rgba(0, 102, 0, 0.3)'">从JSON加载</button>
+                        <button onclick="simulator.updateJSONFromForm()" style="background: linear-gradient(135deg, #666600, #999900); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 2px 6px rgba(102, 102, 0, 0.3);" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 3px 8px rgba(102, 102, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 6px rgba(102, 102, 0, 0.3)'">更新JSON</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 按钮区域 -->
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(0, 255, 255, 0.2);">
+                <div style="display: flex; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                    <button onclick="simulator.applyCustomConfig()" style="background: linear-gradient(135deg, #00ffff, #00cccc); color: black; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s ease; box-shadow: 0 3px 10px rgba(0, 255, 255, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 5px 15px rgba(0, 255, 255, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 3px 10px rgba(0, 255, 255, 0.3)'">✓ 应用配置</button>
+                    <button onclick="simulator.saveCustomConfig()" style="background: linear-gradient(135deg, #00aa00, #00dd00); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s ease; box-shadow: 0 3px 10px rgba(0, 170, 0, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 5px 15px rgba(0, 170, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 3px 10px rgba(0, 170, 0, 0.3)'">💾 保存配置</button>
+                    <button onclick="simulator.resetConfigForm()" style="background: linear-gradient(135deg, #aa6600, #dd8800); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s ease; box-shadow: 0 3px 10px rgba(170, 102, 0, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 5px 15px rgba(170, 102, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 3px 10px rgba(170, 102, 0, 0.3)'">🔄 重置表单</button>
+                    <button onclick="simulator.hideCustomConfigDialog()" style="background: linear-gradient(135deg, #aa0000, #dd0000); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s ease; box-shadow: 0 3px 10px rgba(170, 0, 0, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 5px 15px rgba(170, 0, 0, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 3px 10px rgba(170, 0, 0, 0.3)'">✕ 取消</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="info">
+                <strong>3D三体问题演示器</strong><br>
+                • 鼠标左键拖拽：旋转视角<br>
+                • 鼠标滚轮：缩放<br>
+                • 鼠标右键拖拽：平移视角<br>
+                • WASD键：平移相机<br>
+                • R键：重置相机位置<br>
+                • 星体大小与质量成正比<br>
+                • 支持时间控制和质量调节
+            </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class ThreeBodySimulator3D {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.bodies = [];
+                this.trails = [];
+                
+                // 真实物理常数和单位系统
+                this.physicsConstants = {
+                    // 万有引力常数 (m³/kg/s²)
+                    G: 6.67430e-11,
+                    // 天文单位 (m) - 地球到太阳的平均距离
+                    AU: 1.496e11,
+                    // 太阳质量 (kg)
+                    SOLAR_MASS: 1.989e30,
+                    // 地球质量 (kg)
+                    EARTH_MASS: 5.972e24,
+                    // 月球质量 (kg)
+                    LUNAR_MASS: 7.342e22,
+                    // 木星质量 (kg)
+                    JUPITER_MASS: 1.898e27,
+                    // 一年的秒数
+                    YEAR_SECONDS: 365.25 * 24 * 3600,
+                    // 一天的秒数
+                    DAY_SECONDS: 24 * 3600
+                };
+                
+                // 缩放因子 - 用于将真实尺度转换为可视化尺度
+                this.scaleFactors = {
+                    // 距离缩放：1 AU = 10 单位
+                    distance: 10 / this.physicsConstants.AU,
+                    // 质量缩放：1 太阳质量 = 1 单位
+                    mass: 1 / this.physicsConstants.SOLAR_MASS,
+                    // 时间缩放：1 年 = 100 秒
+                    time: 100 / this.physicsConstants.YEAR_SECONDS
+                };
+                
+                // 物理参数（简化单位用于可视化）
+                this.gravity = 1.0; // 简化的引力常数，适合可视化
+                this.timeStep = 0.01; // 小的基础时间步长
+                this.timeSpeed = 1.0; // 时间倍速
+                this.trailLength = 365; // 轨迹长度（天数）
+                this.trailThickness = 2; // 轨迹粗细
+                this.showAllTrails = true; // 是否显示所有轨迹
+                this.isRunning = true;
+                this.frameCount = 0;
+                
+                // 相机控制
+                this.mouseDown = false;
+                this.mouseX = 0;
+                this.mouseY = 0;
+                this.cameraDistance = 15;
+                this.cameraAngleX = 0;
+                this.cameraAngleY = 0;
+                this.panX = 0;
+                this.panY = 0;
+                
+                // 自定义配置存储
+                this.customConfigurations = JSON.parse(localStorage.getItem('customConfigurations') || '[]');
+                
+                this.init();
+            }
+
+            init() {
+                this.initThreeJS();
+                this.createBodies();
+                // 延迟执行setupControls，确保DOM元素已加载
+                setTimeout(() => {
+                    this.setupControls();
+                }, 100);
+                this.setupResizeObserver();
+                this.animate();
+            }
+
+            initThreeJS() {
+                // 创建场景
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x000011);
+
+                // 创建相机
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(0, 5, 15);
+
+                // 创建渲染器
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+
+                // 添加光源
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 5);
+                directionalLight.castShadow = true;
+                this.scene.add(directionalLight);
+
+                // 添加星空背景
+                this.createStarField();
+
+                // 鼠标控制
+                this.setupMouseControls();
+
+                // 窗口大小调整
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+
+            createStarField() {
+                const starGeometry = new THREE.BufferGeometry();
+                const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+
+                const starVertices = [];
+                for (let i = 0; i < 1000; i++) {
+                    const x = (Math.random() - 0.5) * 200;
+                    const y = (Math.random() - 0.5) * 200;
+                    const z = (Math.random() - 0.5) * 200;
+                    starVertices.push(x, y, z);
+                }
+
+                starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+                const stars = new THREE.Points(starGeometry, starMaterial);
+                this.scene.add(stars);
+            }
+
+            setupMouseControls() {
+                const canvas = this.renderer.domElement;
+                let rightMouseDown = false;
+                let panStartX = 0;
+                let panStartY = 0;
+                let panOffsetX = 0;
+                let panOffsetY = 0;
+
+                canvas.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    
+                    if (event.button === 0) { // 左键 - 旋转
+                        this.mouseDown = true;
+                        this.mouseX = event.clientX;
+                        this.mouseY = event.clientY;
+                    } else if (event.button === 2) { // 右键 - 平移
+                        rightMouseDown = true;
+                        panStartX = event.clientX;
+                        panStartY = event.clientY;
+                    }
+                });
+
+                canvas.addEventListener('mousemove', (event) => {
+                    if (this.mouseDown) { // 旋转
+                        const deltaX = event.clientX - this.mouseX;
+                        const deltaY = event.clientY - this.mouseY;
+
+                        // 反转X轴旋转方向，使鼠标向左滑动时镜头向左移动
+                        this.cameraAngleY -= deltaX * 0.01;
+                        this.cameraAngleX += deltaY * 0.01;
+
+                        this.cameraAngleX = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.cameraAngleX));
+
+                        this.updateCameraPosition();
+
+                        this.mouseX = event.clientX;
+                        this.mouseY = event.clientY;
+                    } else if (rightMouseDown) { // 平移
+                        const deltaX = event.clientX - panStartX;
+                        const deltaY = event.clientY - panStartY;
+                        
+                        panOffsetX += deltaX * 0.01;
+                        panOffsetY -= deltaY * 0.01; // 反转Y轴
+                        
+                        this.updateCameraPosition(panOffsetX, panOffsetY);
+                        
+                        panStartX = event.clientX;
+                        panStartY = event.clientY;
+                    }
+                });
+
+                canvas.addEventListener('mouseup', (event) => {
+                    if (event.button === 0) {
+                        this.mouseDown = false;
+                    } else if (event.button === 2) {
+                        rightMouseDown = false;
+                    }
+                });
+
+                // 禁用右键菜单
+                canvas.addEventListener('contextmenu', (event) => {
+                    event.preventDefault();
+                });
+
+                canvas.addEventListener('wheel', (event) => {
+                    event.preventDefault();
+                    this.cameraDistance += event.deltaY * 0.01;
+                    this.cameraDistance = Math.max(3, Math.min(100, this.cameraDistance));
+                    this.updateCameraPosition(panOffsetX, panOffsetY);
+                });
+
+                // 键盘控制
+                document.addEventListener('keydown', (event) => {
+                    const moveSpeed = 0.5;
+                    switch(event.key) {
+                        case 'w':
+                        case 'W':
+                            panOffsetY += moveSpeed;
+                            break;
+                        case 's':
+                        case 'S':
+                            panOffsetY -= moveSpeed;
+                            break;
+                        case 'a':
+                        case 'A':
+                            panOffsetX -= moveSpeed;
+                            break;
+                        case 'd':
+                        case 'D':
+                            panOffsetX += moveSpeed;
+                            break;
+                        case 'r':
+                        case 'R':
+                            // 重置相机位置
+                            this.cameraAngleX = 0;
+                            this.cameraAngleY = 0;
+                            this.cameraDistance = 15;
+                            panOffsetX = 0;
+                            panOffsetY = 0;
+                            break;
+                    }
+                    this.updateCameraPosition(panOffsetX, panOffsetY);
+                });
+            }
+
+            updateCameraPosition(panX = 0, panY = 0) {
+                const x = this.cameraDistance * Math.cos(this.cameraAngleX) * Math.sin(this.cameraAngleY);
+                const y = this.cameraDistance * Math.sin(this.cameraAngleX);
+                const z = this.cameraDistance * Math.cos(this.cameraAngleX) * Math.cos(this.cameraAngleY);
+
+                this.camera.position.set(x + panX, y + panY, z);
+                this.camera.lookAt(panX, panY, 0);
+            }
+
+            createBodies() {
+                this.clearBodies();
+
+                const colors = [0xff4444, 0x44ff44, 0x4444ff];
+                // 三体问题经典配置 - 等边三角形排列，更合理的初始条件
+                const distance = 3;
+                const positions = [
+                    { x: distance, y: 0, z: 0 },
+                    { x: -distance/2, y: distance * Math.sqrt(3)/2, z: 0 },
+                    { x: -distance/2, y: -distance * Math.sqrt(3)/2, z: 0 }
+                ];
+                
+                // 将三个天体的初始运动速度设置为零
+                const velocity = 0.0;
+                const velocities = [
+                    { x: 0, y: 0, z: 0 },
+                    { x: 0, y: 0, z: 0 },
+                    { x: 0, y: 0, z: 0 }
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = 2.0; // 增加质量以增强引力效果
+                    const radius = this.calculateRadius(mass);
+
+                    // 创建星体几何体和材质
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.2,
+                        shininess: 100,
+                        specular: 0x222222
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    // 创建轨迹 - 使用更高级的材质
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({ 
+                        color: colors[i], 
+                        transparent: true, 
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹效果
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    // 创建身体对象
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3().copy(velocities[i]),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        particles: particles,
+                        trailPoints: [],
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createHaloEffect(body) {
+                // 为星体创建简单的光晕效果
+                // 这里可以添加更复杂的粒子系统，但为了性能考虑，暂时简化
+                const intensity = Math.min(0.8, body.mass * 0.15);
+                body.mesh.material.emissiveIntensity = intensity;
+                
+                // 可以在这里添加更多视觉效果，如动态光晕、粒子爆发等
+            }
+
+            calculateRadius(mass) {
+                // 使用立方根关系，但增加基础大小和缩放因子
+                const baseRadius = 0.2;
+                const scaleFactor = 0.4;
+                return baseRadius + Math.pow(mass, 0.5) * scaleFactor;
+            }
+
+            clearBodies() {
+                this.bodies.forEach(body => {
+                    this.scene.remove(body.mesh);
+                    this.scene.remove(body.trail);
+                    if (body.particles) {
+                        this.scene.remove(body.particles);
+                    }
+                    
+                    // 清理几何体和材质
+                    if (body.mesh) {
+                        body.mesh.geometry.dispose();
+                        body.mesh.material.dispose();
+                    }
+                    if (body.trail) {
+                        body.trail.geometry.dispose();
+                        body.trail.material.dispose();
+                    }
+                    if (body.particles) {
+                        body.particles.geometry.dispose();
+                        body.particles.material.dispose();
+                    }
+                });
+                this.bodies = [];
+            }
+
+            calculateForces() {
+                // 重置所有星体的受力
+                for (let i = 0; i < this.bodies.length; i++) {
+                    this.bodies[i].force.set(0, 0, 0);
+                }
+                
+                // 计算每对星体间的引力
+                for (let i = 0; i < this.bodies.length; i++) {
+                    for (let j = i + 1; j < this.bodies.length; j++) {
+                        const body1 = this.bodies[i];
+                        const body2 = this.bodies[j];
+                        
+                        // 计算距离向量
+                        const dx = body2.position.x - body1.position.x;
+                        const dy = body2.position.y - body1.position.y;
+                        const dz = body2.position.z - body1.position.z;
+                        const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        
+                        // 防止奇点，设置最小距离
+                        const minDistance = 0.5;
+                        const effectiveDistance = Math.max(distance, minDistance);
+                        
+                        // 计算引力大小：F = G * m1 * m2 / r²
+                        // 使用适合可视化的引力常数（比真实值大很多）
+                        const G = 1.0; // 简化的引力常数
+                        const force = G * body1.mass * body2.mass / (effectiveDistance * effectiveDistance);
+                        
+                        // 计算单位方向向量
+                        const fx = force * dx / effectiveDistance;
+                        const fy = force * dy / effectiveDistance;
+                        const fz = force * dz / effectiveDistance;
+                        
+                        // 根据牛顿第三定律，两个星体受到大小相等方向相反的力
+                        body1.force.x += fx;
+                        body1.force.y += fy;
+                        body1.force.z += fz;
+                        
+                        body2.force.x -= fx;
+                        body2.force.y -= fy;
+                        body2.force.z -= fz;
+                    }
+                }
+            }
+
+            updatePhysics() {
+                if (!this.isRunning) return;
+
+                // 计算所有星体间的引力
+                this.calculateForces();
+                
+                // 使用合适的时间步长
+                const dt = this.timeStep * this.timeSpeed;
+
+                for (let i = 0; i < this.bodies.length; i++) {
+                    const body = this.bodies[i];
+                    
+                    // 计算加速度 (a = F/m)
+                    const ax = body.force.x / body.mass;
+                    const ay = body.force.y / body.mass;
+                    const az = body.force.z / body.mass;
+                    
+                    // 更新速度
+                    body.velocity.x += ax * dt;
+                    body.velocity.y += ay * dt;
+                    body.velocity.z += az * dt;
+                    
+                    // 更新位置
+                    body.position.x += body.velocity.x * dt;
+                    body.position.y += body.velocity.y * dt;
+                    body.position.z += body.velocity.z * dt;
+                    
+                    // 更新3D对象位置
+                    body.mesh.position.copy(body.position);
+
+                    // 根据质量更新星体大小
+                    const radius = this.calculateRadius(body.mass);
+                    const scale = radius / 0.3; // 基准缩放
+                    body.mesh.scale.setScalar(scale);
+                    
+                    // 添加发光效果，质量越大发光越强
+                    const glowIntensity = Math.min(0.5, body.mass * 0.1);
+                    body.mesh.material.emissiveIntensity = glowIntensity;
+
+                    // 添加星体周围的光晕粒子效果
+                    if (this.frameCount % 10 === 0) { // 每10帧更新一次光晕
+                        this.createHaloEffect(body);
+                    }
+
+                    // 更新轨迹
+                    body.trailPoints.push(new THREE.Vector3().copy(body.position));
+                    if (body.trailPoints.length > this.trailLength) {
+                        body.trailPoints.shift();
+                    }
+
+                    // 更新轨迹几何体
+                    if (body.trailPoints.length > 1) {
+                        body.trail.geometry.setFromPoints(body.trailPoints);
+                    }
+
+                    // 更新粒子轨迹 - 每隔几帧添加一个粒子点
+                    if (this.frameCount % 3 === 0) { // 每3帧添加一个粒子
+                        body.particlePoints.push(new THREE.Vector3().copy(body.position));
+                        if (body.particlePoints.length > this.trailLength * 0.5) {
+                            body.particlePoints.shift();
+                        }
+                        
+                        // 更新粒子几何体
+                        if (body.particlePoints.length > 0) {
+                            body.particles.geometry.setFromPoints(body.particlePoints);
+                        }
+                    }
+                }
+            }
+
+            setupControls() {
+                // 播放/暂停按钮
+                document.getElementById('playPause').addEventListener('click', () => {
+                    this.isRunning = !this.isRunning;
+                    document.getElementById('playPause').textContent = this.isRunning ? '暂停' : '播放';
+                });
+
+                // 重置按钮
+                document.getElementById('reset').addEventListener('click', () => {
+                    this.reset();
+                });
+
+                // 时间控制
+                document.getElementById('slowDown').addEventListener('click', () => {
+                    this.timeSpeed = Math.max(0.1, this.timeSpeed * 0.5);
+                    this.updateSpeedDisplay();
+                });
+
+                document.getElementById('normalSpeed').addEventListener('click', () => {
+                    this.timeSpeed = 1.0;
+                    this.updateSpeedDisplay();
+                });
+
+                document.getElementById('speedUp').addEventListener('click', () => {
+                    this.timeSpeed = Math.min(10.0, this.timeSpeed * 2.0);
+                    this.updateSpeedDisplay();
+                });
+
+                // 万有引力常数控制
+                const gravitySlider = document.getElementById('gravity');
+                const gravityValue = document.getElementById('gravityValue');
+                gravitySlider.addEventListener('input', () => {
+                    // 将滑块值转换为真实的万有引力常数
+                    this.gravity = parseFloat(gravitySlider.value) * 1e-11;
+                    gravityValue.textContent = parseFloat(gravitySlider.value).toFixed(2);
+                });
+
+                // 时间步长控制
+                const timeStepSlider = document.getElementById('timeStep');
+                const timeStepValue = document.getElementById('timeStepValue');
+                timeStepSlider.addEventListener('input', () => {
+                    this.timeStep = parseFloat(timeStepSlider.value) * this.physicsConstants.DAY_SECONDS;
+                    timeStepValue.textContent = parseFloat(timeStepSlider.value).toFixed(1);
+                });
+
+                // 时间倍速控制
+                const timeSpeedSlider = document.getElementById('timeSpeed');
+                const timeSpeedValue = document.getElementById('timeSpeedValue');
+                timeSpeedSlider.addEventListener('input', () => {
+                    this.timeSpeed = parseFloat(timeSpeedSlider.value);
+                    timeSpeedValue.textContent = this.timeSpeed.toFixed(1);
+                });
+
+                // 轨迹长度控制
+                const trailSlider = document.getElementById('trailLength');
+                const trailValue = document.getElementById('trailValue');
+                trailSlider.addEventListener('input', () => {
+                    this.trailLength = parseInt(trailSlider.value);
+                    trailValue.textContent = this.trailLength;
+                });
+
+                // 轨迹粗细控制
+                const trailThicknessSelect = document.getElementById('trailThickness');
+                trailThicknessSelect.addEventListener('change', () => {
+                    this.trailThickness = parseInt(trailThicknessSelect.value);
+                    this.updateTrailThickness();
+                });
+
+                // 轨迹显示控制
+                const showAllTrailsCheckbox = document.getElementById('showAllTrails');
+                showAllTrailsCheckbox.addEventListener('change', () => {
+                    this.showAllTrails = showAllTrailsCheckbox.checked;
+                    this.updateTrailVisibility();
+                });
+
+                // 质量控制（以太阳质量为单位）
+                for (let i = 1; i <= 3; i++) {
+                    const massSlider = document.getElementById(`mass${i}`);
+                    const massValue = document.getElementById(`mass${i}Value`);
+                    
+                    massSlider.addEventListener('input', () => {
+                        const newMass = parseFloat(massSlider.value);
+                        massValue.textContent = newMass.toFixed(1);
+                        this.updateBodyMass(i - 1, newMass);
+                    });
+                }
+
+                // 自定义配置按钮
+                document.getElementById('customConfig').addEventListener('click', () => {
+                    this.showCustomConfigDialog();
+                });
+
+                // 保存当前配置按钮
+                document.getElementById('saveCurrentConfig').addEventListener('click', () => {
+                    this.saveCurrentConfig();
+                });
+
+                // 导出配置按钮
+                document.getElementById('exportConfigs').addEventListener('click', () => {
+                    this.exportConfigs();
+                });
+
+                // 导入配置按钮
+                document.getElementById('importConfigs').addEventListener('click', () => {
+                    document.getElementById('configFileInput').click();
+                });
+
+                // 配置文件输入处理
+                document.getElementById('configFileInput').addEventListener('change', (event) => {
+                    this.importConfigs(event);
+                });
+            }
+
+            updateBodyMass(index, newMass) {
+                if (this.bodies[index]) {
+                    // 将太阳质量倍数转换为实际质量（kg）
+                    this.bodies[index].mass = newMass * this.physicsConstants.SOLAR_MASS;
+                    
+                    // 更新天体大小（基于质量的立方根）
+                    const radius = this.calculateRadius(newMass);
+                    const scale = radius / 0.3;
+                    this.bodies[index].mesh.scale.setScalar(scale);
+                    
+                    // 更新发光效果
+                    const glowIntensity = Math.min(0.5, newMass * 0.1);
+                    this.bodies[index].mesh.material.emissiveIntensity = glowIntensity;
+                }
+            }
+
+            updateSpeedDisplay() {
+                document.getElementById('speedDisplay').textContent = `速度: ${this.timeSpeed.toFixed(1)}x`;
+            }
+
+            // 更新轨迹粗细
+            updateTrailThickness() {
+                this.bodies.forEach(body => {
+                    if (body.trail && body.trail.material) {
+                        body.trail.material.linewidth = this.trailThickness;
+                    }
+                });
+            }
+
+            // 更新轨迹显示状态
+            updateTrailVisibility() {
+                this.bodies.forEach(body => {
+                    if (body.trail) {
+                        body.trail.visible = this.showAllTrails;
+                    }
+                });
+            }
+
+            loadPreset(preset) {
+                this.clearBodies();
+                
+                switch (preset) {
+                    case 'triangle':
+                        this.createTrianglePreset();
+                        break;
+                    case 'linear':
+                        this.createLinearPreset();
+                        break;
+                    case 'binary':
+                        this.createBinaryPreset();
+                        break;
+                    case 'solar':
+                        this.createSolarSystemPreset();
+                        break;
+                    case 'jupiter':
+                        this.createJupiterSystemPreset();
+                        break;
+                    case 'alpha':
+                        this.createAlphaCentauriPreset();
+                        break;
+                    case 'random':
+                        this.createRandomPreset();
+                        break;
+                }
+            }
+
+            createTrianglePreset() {
+                this.createBodies(); // 默认就是三角形配置
+            }
+
+            createLinearPreset() {
+                this.clearBodies();
+                const colors = [0xff4444, 0x44ff44, 0x4444ff];
+                const positions = [
+                    { x: -4, y: 0, z: 0 },
+                    { x: 0, y: 0, z: 0 },
+                    { x: 4, y: 0, z: 0 }
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = 1.0;
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.3,
+                        shininess: 100,
+                        specular: 0x111111
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3(0, (i === 1 ? 0.8 : -0.4), 0),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        trailPoints: [],
+                        particles: particles,
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createBinaryPreset() {
+                this.clearBodies();
+                const colors = [0xff4444, 0x44ff44, 0x4444ff];
+                const masses = [2.0, 2.0, 0.5];
+                const positions = [
+                    { x: -2, y: 0, z: 0 },
+                    { x: 2, y: 0, z: 0 },
+                    { x: 0, y: 0, z: 4 }
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = masses[i];
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.3,
+                        shininess: 100,
+                        specular: 0x111111
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3(
+                            i < 2 ? 0 : -0.5,
+                            i < 2 ? (i === 0 ? 0.3 : -0.3) : 0,
+                            0
+                        ),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        trailPoints: [],
+                        particles: particles,
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createSolarSystemPreset() {
+                this.clearBodies();
+                // 太阳系模型：太阳、地球、月球
+                const colors = [0xffff00, 0x4444ff, 0xcccccc];
+                const masses = [1.0, 0.000003, 0.00000004]; // 相对太阳质量
+                const positions = [
+                    { x: 0, y: 0, z: 0 },      // 太阳
+                    { x: 1, y: 0, z: 0 },      // 地球（1 AU）
+                    { x: 1.0026, y: 0, z: 0 }  // 月球（距地球0.0026 AU）
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = masses[i];
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: i === 0 ? 0.8 : 0.3, // 太阳更亮
+                        shininess: 100,
+                        specular: 0x222222
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    // 创建轨迹 - 使用更高级的材质
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹效果
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3(
+                            0,
+                            i === 0 ? 0 : (i === 1 ? 0.0172 : 0.0172 + 0.0596), // 地球轨道速度 + 月球轨道速度
+                            0
+                        ),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        particles: particles,
+                        trailPoints: [],
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createJupiterSystemPreset() {
+                this.clearBodies();
+                // 木星系统：木星、木卫一（伊奥）、木卫二（欧罗巴）
+                const colors = [0xffa500, 0xffff99, 0x87ceeb];
+                const masses = [0.000954, 0.0000000449, 0.0000000244]; // 相对太阳质量
+                const positions = [
+                    { x: 0, y: 0, z: 0 },        // 木星
+                    { x: 0.0028, y: 0, z: 0 },   // 木卫一（伊奥）
+                    { x: 0.0045, y: 0, z: 0 }    // 木卫二（欧罗巴）
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = masses[i];
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.4,
+                        shininess: 100,
+                        specular: 0x222222
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    // 创建轨迹 - 使用更高级的材质
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹效果
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3(
+                            0,
+                            i === 0 ? 0 : (i === 1 ? 0.097 : 0.077), // 木卫轨道速度
+                            0
+                        ),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        particles: particles,
+                        trailPoints: [],
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createAlphaCentauriPreset() {
+                this.clearBodies();
+                // 半人马座α系统：半人马座α A、半人马座α B、比邻星
+                const colors = [0xffff99, 0xffa500, 0xff6666];
+                const masses = [1.1, 0.907, 0.123]; // 相对太阳质量
+                const positions = [
+                    { x: -0.5, y: 0, z: 0 },     // 半人马座α A
+                    { x: 0.5, y: 0, z: 0 },      // 半人马座α B
+                    { x: 0, y: 0, z: 3 }         // 比邻星
+                ];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = masses[i];
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.6,
+                        shininess: 100,
+                        specular: 0x222222
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.copy(positions[i]);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    // 创建轨迹 - 使用更高级的材质
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹效果
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(positions[i]),
+                        velocity: new THREE.Vector3(
+                            0,
+                            i < 2 ? (i === 0 ? 0.015 : -0.015) : 0.005, // 双星系统轨道速度
+                            0
+                        ),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        particles: particles,
+                        trailPoints: [],
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            createRandomPreset() {
+                this.clearBodies();
+                const colors = [0xff4444, 0x44ff44, 0x4444ff];
+
+                for (let i = 0; i < 3; i++) {
+                    const mass = 0.5 + Math.random() * 2;
+                    const radius = this.calculateRadius(mass);
+
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: colors[i],
+                        emissive: colors[i],
+                        emissiveIntensity: 0.3,
+                        shininess: 100,
+                        specular: 0x111111
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.set(
+                        (Math.random() - 0.5) * 8,
+                        (Math.random() - 0.5) * 4,
+                        (Math.random() - 0.5) * 8
+                    );
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({
+                        color: colors[i],
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: colors[i],
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3().copy(mesh.position),
+                        velocity: new THREE.Vector3(
+                            (Math.random() - 0.5) * 1,
+                            (Math.random() - 0.5) * 1,
+                            (Math.random() - 0.5) * 1
+                        ),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        trailPoints: [],
+                        particles: particles,
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+            }
+
+            // 自定义配置相关函数
+            showCustomConfigDialog() {
+                // 填充当前配置到对话框
+                if (this.bodies.length >= 3) {
+                    for (let i = 0; i < 3; i++) {
+                        const body = this.bodies[i];
+                        document.getElementById(`body${i+1}Mass`).value = body.mass.toFixed(3);
+                        document.getElementById(`body${i+1}X`).value = body.position.x.toFixed(2);
+                        document.getElementById(`body${i+1}Y`).value = body.position.y.toFixed(2);
+                        document.getElementById(`body${i+1}Z`).value = body.position.z.toFixed(2);
+                        document.getElementById(`body${i+1}VX`).value = body.velocity.x.toFixed(3);
+                        document.getElementById(`body${i+1}VY`).value = body.velocity.y.toFixed(3);
+                        document.getElementById(`body${i+1}VZ`).value = body.velocity.z.toFixed(3);
+                        
+                        // 转换颜色值
+                        const color = '#' + body.mesh.material.color.getHexString();
+                        document.getElementById(`body${i+1}Color`).value = color;
+                        
+                        // 填充新增的参数
+                        document.getElementById(`body${i+1}RadiusMultiplier`).value = 1.0;
+                        document.getElementById(`body${i+1}EmissiveIntensity`).value = body.mesh.material.emissiveIntensity || 0.3;
+                        document.getElementById(`body${i+1}Shininess`).value = body.mesh.material.shininess || 100;
+                        document.getElementById(`body${i+1}TrailOpacity`).value = body.trail.material.opacity || 0.8;
+                    }
+                }
+                
+                // 填充全局参数
+                document.getElementById('gravityConstant').value = this.G || 1.0;
+                document.getElementById('timeStep').value = this.dt || 0.01;
+                document.getElementById('trailLength').value = this.maxTrailPoints || 1000;
+                document.getElementById('particleCount').value = 100;
+                
+                // 更新JSON显示
+                this.updateJSONFromForm();
+                
+                document.getElementById('customConfigDialog').style.display = 'block';
+            }
+
+            hideCustomConfigDialog() {
+                document.getElementById('customConfigDialog').style.display = 'none';
+            }
+
+            applyCustomConfig() {
+                this.clearBodies();
+                
+                // 应用全局参数
+                this.G = parseFloat(document.getElementById('gravityConstant').value) || 1.0;
+                this.dt = parseFloat(document.getElementById('timeStep').value) || 0.01;
+                this.maxTrailPoints = parseInt(document.getElementById('trailLength').value) || 1000;
+                const particleCount = parseInt(document.getElementById('particleCount').value) || 100;
+                
+                for (let i = 0; i < 3; i++) {
+                    const mass = parseFloat(document.getElementById(`body${i+1}Mass`).value);
+                    const x = parseFloat(document.getElementById(`body${i+1}X`).value);
+                    const y = parseFloat(document.getElementById(`body${i+1}Y`).value);
+                    const z = parseFloat(document.getElementById(`body${i+1}Z`).value) || 0;
+                    const vx = parseFloat(document.getElementById(`body${i+1}VX`).value);
+                    const vy = parseFloat(document.getElementById(`body${i+1}VY`).value);
+                    const vz = parseFloat(document.getElementById(`body${i+1}VZ`).value) || 0;
+                    const color = document.getElementById(`body${i+1}Color`).value;
+                    const radiusMultiplier = parseFloat(document.getElementById(`body${i+1}RadiusMultiplier`).value) || 1.0;
+                    const emissiveIntensity = parseFloat(document.getElementById(`body${i+1}EmissiveIntensity`).value) || 0.3;
+                    const shininess = parseFloat(document.getElementById(`body${i+1}Shininess`).value) || 100;
+                    const trailOpacity = parseFloat(document.getElementById(`body${i+1}TrailOpacity`).value) || 0.8;
+                    
+                    const radius = this.calculateRadius(mass) * radiusMultiplier;
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: color,
+                        emissive: color,
+                        emissiveIntensity: emissiveIntensity,
+                        shininess: shininess,
+                        specular: 0x222222
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.set(x, y, z);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    this.scene.add(mesh);
+
+                    // 创建轨迹
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({ 
+                        color: color, 
+                        transparent: true, 
+                        opacity: trailOpacity,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子轨迹效果
+                    const particleGeometry = new THREE.BufferGeometry();
+                    const particleMaterial = new THREE.PointsMaterial({
+                        color: color,
+                        size: 0.05,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const particles = new THREE.Points(particleGeometry, particleMaterial);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3(x, y, z),
+                        velocity: new THREE.Vector3(vx, vy, vz),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        particles: particles,
+                        trailPoints: [],
+                        particlePoints: []
+                    };
+
+                    this.bodies.push(body);
+                }
+                
+                this.hideCustomConfigDialog();
+            }
+
+            resetConfigForm() {
+                // 重置为默认值
+                document.getElementById('configName').value = '';
+                document.getElementById('configDescription').value = '';
+                
+                // 重置全局参数
+                document.getElementById('gravityConstant').value = 1.0;
+                document.getElementById('timeStep').value = 0.01;
+                document.getElementById('trailLength').value = 1000;
+                document.getElementById('particleCount').value = 100;
+                
+                // 重置天体参数
+                const defaultBodies = [
+                    { mass: 1.0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, color: '#ff4444' },
+                    { mass: 1.0, x: 2, y: 0, z: 0, vx: 0, vy: 0.02, vz: 0, color: '#44ff44' },
+                    { mass: 1.0, x: -2, y: 0, z: 0, vx: 0, vy: -0.02, vz: 0, color: '#4444ff' }
+                ];
+                
+                for (let i = 0; i < 3; i++) {
+                    const body = defaultBodies[i];
+                    document.getElementById(`body${i+1}Mass`).value = body.mass;
+                    document.getElementById(`body${i+1}X`).value = body.x;
+                    document.getElementById(`body${i+1}Y`).value = body.y;
+                    document.getElementById(`body${i+1}Z`).value = body.z;
+                    document.getElementById(`body${i+1}VX`).value = body.vx;
+                    document.getElementById(`body${i+1}VY`).value = body.vy;
+                    document.getElementById(`body${i+1}VZ`).value = body.vz;
+                    document.getElementById(`body${i+1}Color`).value = body.color;
+                    document.getElementById(`body${i+1}RadiusMultiplier`).value = 1.0;
+                    document.getElementById(`body${i+1}EmissiveIntensity`).value = 0.3;
+                    document.getElementById(`body${i+1}Shininess`).value = 100;
+                    document.getElementById(`body${i+1}TrailOpacity`).value = 0.8;
+                }
+                
+                this.updateJSONFromForm();
+            }
+
+            updateJSONFromForm() {
+                const config = this.getConfigFromForm();
+                document.getElementById('configJSON').value = JSON.stringify(config, null, 2);
+            }
+
+            getConfigFromForm() {
+                const config = {
+                    name: document.getElementById('configName').value || '未命名配置',
+                    description: document.getElementById('configDescription').value || '',
+                    timestamp: new Date().toISOString(),
+                    globalParams: {
+                        gravityConstant: parseFloat(document.getElementById('gravityConstant').value) || 1.0,
+                        timeStep: parseFloat(document.getElementById('timeStep').value) || 0.01,
+                        trailLength: parseInt(document.getElementById('trailLength').value) || 1000,
+                        particleCount: parseInt(document.getElementById('particleCount').value) || 100
+                    },
+                    bodies: []
+                };
+
+                for (let i = 0; i < 3; i++) {
+                    config.bodies.push({
+                        mass: parseFloat(document.getElementById(`body${i+1}Mass`).value) || 1.0,
+                        position: {
+                            x: parseFloat(document.getElementById(`body${i+1}X`).value) || 0,
+                            y: parseFloat(document.getElementById(`body${i+1}Y`).value) || 0,
+                            z: parseFloat(document.getElementById(`body${i+1}Z`).value) || 0
+                        },
+                        velocity: {
+                            x: parseFloat(document.getElementById(`body${i+1}VX`).value) || 0,
+                            y: parseFloat(document.getElementById(`body${i+1}VY`).value) || 0,
+                            z: parseFloat(document.getElementById(`body${i+1}VZ`).value) || 0
+                        },
+                        appearance: {
+                            color: document.getElementById(`body${i+1}Color`).value || '#ffffff',
+                            radiusMultiplier: parseFloat(document.getElementById(`body${i+1}RadiusMultiplier`).value) || 1.0,
+                            emissiveIntensity: parseFloat(document.getElementById(`body${i+1}EmissiveIntensity`).value) || 0.3,
+                            shininess: parseFloat(document.getElementById(`body${i+1}Shininess`).value) || 100,
+                            trailOpacity: parseFloat(document.getElementById(`body${i+1}TrailOpacity`).value) || 0.8
+                        }
+                    });
+                }
+
+                return config;
+            }
+
+            loadFromJSON() {
+                try {
+                    const jsonText = document.getElementById('configJSON').value;
+                    const config = JSON.parse(jsonText);
+                    this.loadConfigToForm(config);
+                    alert('配置已从JSON加载到表单！');
+                } catch (error) {
+                    alert('JSON格式错误：' + error.message);
+                }
+            }
+
+            loadConfigToForm(config) {
+                // 加载基本信息
+                document.getElementById('configName').value = config.name || '';
+                document.getElementById('configDescription').value = config.description || '';
+                
+                // 加载全局参数
+                if (config.globalParams) {
+                    document.getElementById('gravityConstant').value = config.globalParams.gravityConstant || 1.0;
+                    document.getElementById('timeStep').value = config.globalParams.timeStep || 0.01;
+                    document.getElementById('trailLength').value = config.globalParams.trailLength || 1000;
+                    document.getElementById('particleCount').value = config.globalParams.particleCount || 100;
+                }
+                
+                // 加载天体参数
+                if (config.bodies && config.bodies.length >= 3) {
+                    for (let i = 0; i < 3; i++) {
+                        const body = config.bodies[i];
+                        document.getElementById(`body${i+1}Mass`).value = body.mass || 1.0;
+                        document.getElementById(`body${i+1}X`).value = body.position?.x || 0;
+                        document.getElementById(`body${i+1}Y`).value = body.position?.y || 0;
+                        document.getElementById(`body${i+1}Z`).value = body.position?.z || 0;
+                        document.getElementById(`body${i+1}VX`).value = body.velocity?.x || 0;
+                        document.getElementById(`body${i+1}VY`).value = body.velocity?.y || 0;
+                        document.getElementById(`body${i+1}VZ`).value = body.velocity?.z || 0;
+                        
+                        if (body.appearance) {
+                            document.getElementById(`body${i+1}Color`).value = body.appearance.color || '#ffffff';
+                            document.getElementById(`body${i+1}RadiusMultiplier`).value = body.appearance.radiusMultiplier || 1.0;
+                            document.getElementById(`body${i+1}EmissiveIntensity`).value = body.appearance.emissiveIntensity || 0.3;
+                            document.getElementById(`body${i+1}Shininess`).value = body.appearance.shininess || 100;
+                            document.getElementById(`body${i+1}TrailOpacity`).value = body.appearance.trailOpacity || 0.8;
+                        } else {
+                            // 兼容旧格式
+                            document.getElementById(`body${i+1}Color`).value = body.color || '#ffffff';
+                            document.getElementById(`body${i+1}RadiusMultiplier`).value = 1.0;
+                            document.getElementById(`body${i+1}EmissiveIntensity`).value = 0.3;
+                            document.getElementById(`body${i+1}Shininess`).value = 100;
+                            document.getElementById(`body${i+1}TrailOpacity`).value = 0.8;
+                        }
+                    }
+                }
+            }
+
+            exportConfig() {
+                const config = this.getConfigFromForm();
+                const dataStr = JSON.stringify(config, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `三体配置_${config.name}_${new Date().toISOString().slice(0, 10)}.json`;
+                link.click();
+            }
+
+            importConfig(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const config = JSON.parse(e.target.result);
+                        this.loadConfigToForm(config);
+                        document.getElementById('configJSON').value = JSON.stringify(config, null, 2);
+                        alert(`配置 "${config.name}" 已导入！`);
+                    } catch (error) {
+                        alert('文件格式错误：' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            saveCustomConfig() {
+                const configName = document.getElementById('configName').value.trim();
+                if (!configName) {
+                    alert('请输入配置名称！');
+                    return;
+                }
+
+                const config = this.getConfigFromForm();
+
+                // 保存到localStorage
+                let savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                
+                // 检查是否已存在同名配置
+                const existingIndex = savedConfigs.findIndex(c => c.name === configName);
+                if (existingIndex >= 0) {
+                    if (confirm(`配置 "${configName}" 已存在，是否覆盖？`)) {
+                        savedConfigs[existingIndex] = config;
+                    } else {
+                        return;
+                    }
+                } else {
+                    savedConfigs.push(config);
+                }
+                
+                localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+
+                alert(`配置 "${configName}" 已保存！`);
+                this.hideCustomConfigDialog();
+                this.updateCustomConfigButtons();
+            }
+
+            saveCurrentConfig() {
+                if (this.bodies.length < 3) {
+                    alert('请先创建三个天体！');
+                    return;
+                }
+
+                const configName = prompt('请输入配置名称：');
+                if (!configName) return;
+
+                const config = {
+                    name: configName,
+                    description: '从当前模拟状态保存的配置',
+                    physics: {
+                        gravityConstant: this.G,
+                        timeStep: this.timeStep,
+                        trailLength: this.maxTrailLength,
+                        particleCount: this.particleCount
+                    },
+                    bodies: []
+                };
+
+                for (let i = 0; i < 3; i++) {
+                    const body = this.bodies[i];
+                    const material = body.mesh.material;
+                    config.bodies.push({
+                        mass: body.mass,
+                        position: {
+                            x: body.position.x,
+                            y: body.position.y,
+                            z: body.position.z
+                        },
+                        velocity: {
+                            x: body.velocity.x,
+                            y: body.velocity.y,
+                            z: body.velocity.z
+                        },
+                        appearance: {
+                            color: '#' + material.color.getHexString(),
+                            radiusMultiplier: body.mesh.geometry.parameters.radius / this.calculateRadius(body.mass),
+                            emissiveIntensity: material.emissiveIntensity || 0.3,
+                            shininess: material.shininess || 100,
+                            trailOpacity: body.trail.material.opacity || 0.8
+                        }
+                    });
+                }
+
+                // 保存到localStorage
+                let savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                
+                // 检查是否已存在同名配置
+                const existingIndex = savedConfigs.findIndex(c => c.name === configName);
+                if (existingIndex >= 0) {
+                    if (confirm(`配置 "${configName}" 已存在，是否覆盖？`)) {
+                        savedConfigs[existingIndex] = config;
+                    } else {
+                        return;
+                    }
+                } else {
+                    savedConfigs.push(config);
+                }
+                
+                localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+
+                alert(`配置 "${configName}" 已保存！`);
+                this.updateCustomConfigButtons();
+            }
+
+            updateCustomConfigButtons() {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                const buttonGroup = document.querySelector('.button-group:last-child');
+                
+                // 移除现有的自定义配置按钮
+                const existingButtons = buttonGroup.querySelectorAll('.custom-config-btn, .config-management-btn');
+                existingButtons.forEach(btn => btn.remove());
+
+                // 添加新的自定义配置按钮
+                savedConfigs.forEach((config, index) => {
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.style.display = 'flex';
+                    buttonContainer.style.alignItems = 'center';
+                    buttonContainer.style.marginTop = '5px';
+                    buttonContainer.style.gap = '5px';
+
+                    const button = document.createElement('button');
+                    button.textContent = config.name;
+                    button.className = 'custom-config-btn';
+                    button.onclick = () => this.loadCustomConfig(index);
+                    button.style.flex = '1';
+                    button.style.minWidth = '0';
+                    button.title = config.description || '自定义配置';
+
+                    // 管理按钮容器
+                    const managementContainer = document.createElement('div');
+                    managementContainer.style.display = 'flex';
+                    managementContainer.style.gap = '2px';
+
+                    // 编辑按钮
+                    const editBtn = document.createElement('button');
+                    editBtn.textContent = '✏️';
+                    editBtn.className = 'config-management-btn';
+                    editBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.editCustomConfig(index);
+                    };
+                    editBtn.title = '编辑配置';
+                    editBtn.style.padding = '2px 6px';
+                    editBtn.style.fontSize = '12px';
+
+                    // 复制按钮
+                    const copyBtn = document.createElement('button');
+                    copyBtn.textContent = '📋';
+                    copyBtn.className = 'config-management-btn';
+                    copyBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.copyCustomConfig(index);
+                    };
+                    copyBtn.title = '复制配置';
+                    copyBtn.style.padding = '2px 6px';
+                    copyBtn.style.fontSize = '12px';
+
+                    // 重命名按钮
+                    const renameBtn = document.createElement('button');
+                    renameBtn.textContent = '📝';
+                    renameBtn.className = 'config-management-btn';
+                    renameBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.renameCustomConfig(index);
+                    };
+                    renameBtn.title = '重命名配置';
+                    renameBtn.style.padding = '2px 6px';
+                    renameBtn.style.fontSize = '12px';
+
+                    // 删除按钮
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = '🗑️';
+                    deleteBtn.className = 'config-management-btn';
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.deleteCustomConfig(index);
+                    };
+                    deleteBtn.title = '删除配置';
+                    deleteBtn.style.padding = '2px 6px';
+                    deleteBtn.style.fontSize = '12px';
+                    deleteBtn.style.color = '#ff4444';
+
+                    managementContainer.appendChild(editBtn);
+                    managementContainer.appendChild(copyBtn);
+                    managementContainer.appendChild(renameBtn);
+                    managementContainer.appendChild(deleteBtn);
+
+                    buttonContainer.appendChild(button);
+                    buttonContainer.appendChild(managementContainer);
+                    buttonGroup.appendChild(buttonContainer);
+                });
+
+                // 添加批量管理按钮
+                if (savedConfigs.length > 0) {
+                    const batchContainer = document.createElement('div');
+                    batchContainer.style.display = 'flex';
+                    batchContainer.style.gap = '5px';
+                    batchContainer.style.marginTop = '10px';
+                    batchContainer.style.paddingTop = '10px';
+                    batchContainer.style.borderTop = '1px solid #444';
+
+                    const exportAllBtn = document.createElement('button');
+                    exportAllBtn.textContent = '导出全部';
+                    exportAllBtn.className = 'config-management-btn';
+                    exportAllBtn.onclick = () => this.exportConfigs();
+                    exportAllBtn.style.flex = '1';
+
+                    const clearAllBtn = document.createElement('button');
+                    clearAllBtn.textContent = '清空全部';
+                    clearAllBtn.className = 'config-management-btn';
+                    clearAllBtn.onclick = () => this.clearAllConfigs();
+                    clearAllBtn.style.flex = '1';
+                    clearAllBtn.style.color = '#ff4444';
+
+                    batchContainer.appendChild(exportAllBtn);
+                    batchContainer.appendChild(clearAllBtn);
+                    buttonGroup.appendChild(batchContainer);
+                }
+
+                // 添加导入按钮
+                const importContainer = document.createElement('div');
+                importContainer.style.marginTop = '10px';
+
+                const importInput = document.createElement('input');
+                importInput.type = 'file';
+                importInput.accept = '.json';
+                importInput.style.display = 'none';
+                importInput.onchange = (e) => this.importConfigs(e);
+
+                const importBtn = document.createElement('button');
+                importBtn.textContent = '导入配置';
+                importBtn.className = 'config-management-btn';
+                importBtn.onclick = () => importInput.click();
+                importBtn.style.width = '100%';
+
+                importContainer.appendChild(importInput);
+                importContainer.appendChild(importBtn);
+                buttonGroup.appendChild(importContainer);
+            }
+
+            loadCustomConfig(index) {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (index >= savedConfigs.length) return;
+
+                const config = savedConfigs[index];
+                this.clearBodies();
+
+                // 应用全局物理参数（如果存在）
+                if (config.physics) {
+                    this.G = config.physics.gravityConstant || this.G;
+                    this.timeStep = config.physics.timeStep || this.timeStep;
+                    this.maxTrailLength = config.physics.trailLength || this.maxTrailLength;
+                    this.particleCount = config.physics.particleCount || this.particleCount;
+                }
+
+                config.bodies.forEach(bodyConfig => {
+                    const mass = bodyConfig.mass;
+                    const baseRadius = this.calculateRadius(mass);
+                    
+                    // 获取外观配置
+                    let appearance = bodyConfig.appearance;
+                    if (!appearance) {
+                        // 兼容旧格式
+                        appearance = {
+                            color: bodyConfig.color || '#ffffff',
+                            radiusMultiplier: 1.0,
+                            emissiveIntensity: 0.3,
+                            shininess: 100,
+                            trailOpacity: 0.8
+                        };
+                    }
+
+                    const radius = baseRadius * (appearance.radiusMultiplier || 1.0);
+                    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: appearance.color,
+                        emissive: appearance.color,
+                        emissiveIntensity: appearance.emissiveIntensity || 0.3,
+                        shininess: appearance.shininess || 100
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.set(bodyConfig.position.x, bodyConfig.position.y, bodyConfig.position.z);
+                    this.scene.add(mesh);
+
+                    const trailGeometry = new THREE.BufferGeometry();
+                    const trailMaterial = new THREE.LineBasicMaterial({ 
+                        color: appearance.color, 
+                        transparent: true, 
+                        opacity: appearance.trailOpacity || 0.8,
+                        linewidth: this.trailThickness
+                    });
+                    const trail = new THREE.Line(trailGeometry, trailMaterial);
+                    this.scene.add(trail);
+
+                    // 创建粒子系统
+                    const particles = this.createParticleSystem(appearance.color);
+                    particles.position.copy(mesh.position);
+                    this.scene.add(particles);
+
+                    const body = {
+                        mass: mass,
+                        position: new THREE.Vector3(bodyConfig.position.x, bodyConfig.position.y, bodyConfig.position.z),
+                        velocity: new THREE.Vector3(bodyConfig.velocity.x, bodyConfig.velocity.y, bodyConfig.velocity.z),
+                        force: new THREE.Vector3(0, 0, 0),
+                        mesh: mesh,
+                        trail: trail,
+                        trailPoints: [],
+                        particles: particles
+                    };
+
+                    this.bodies.push(body);
+                });
+            }
+
+            // 配置管理功能
+            editCustomConfig(index) {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (index >= savedConfigs.length) return;
+
+                const config = savedConfigs[index];
+                this.showCustomConfigDialog();
+                this.loadConfigToForm(config);
+            }
+
+            copyCustomConfig(index) {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (index >= savedConfigs.length) return;
+
+                const config = savedConfigs[index];
+                const newName = prompt('请输入新配置的名称：', config.name + '_副本');
+                if (!newName) return;
+
+                const newConfig = JSON.parse(JSON.stringify(config));
+                newConfig.name = newName;
+                newConfig.description = (config.description || '') + ' (副本)';
+
+                savedConfigs.push(newConfig);
+                localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+                
+                alert(`配置 "${newName}" 已复制！`);
+                this.updateCustomConfigButtons();
+            }
+
+            renameCustomConfig(index) {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (index >= savedConfigs.length) return;
+
+                const config = savedConfigs[index];
+                const newName = prompt('请输入新的配置名称：', config.name);
+                if (!newName || newName === config.name) return;
+
+                // 检查是否已存在同名配置
+                if (savedConfigs.some((c, i) => i !== index && c.name === newName)) {
+                    alert('配置名称已存在！');
+                    return;
+                }
+
+                config.name = newName;
+                localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+                
+                alert(`配置已重命名为 "${newName}"！`);
+                this.updateCustomConfigButtons();
+            }
+
+            deleteCustomConfig(index) {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (index >= savedConfigs.length) return;
+
+                const config = savedConfigs[index];
+                if (confirm(`确定要删除配置 "${config.name}" 吗？`)) {
+                    savedConfigs.splice(index, 1);
+                    localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+                    
+                    alert(`配置 "${config.name}" 已删除！`);
+                    this.updateCustomConfigButtons();
+                }
+            }
+
+            clearAllConfigs() {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (savedConfigs.length === 0) {
+                    alert('没有可清空的配置！');
+                    return;
+                }
+
+                if (confirm(`确定要删除全部 ${savedConfigs.length} 个配置吗？此操作不可恢复！`)) {
+                    localStorage.removeItem('customConfigs');
+                    alert('所有配置已清空！');
+                    this.updateCustomConfigButtons();
+                }
+            }
+
+            // 配置导入导出功能
+            exportConfigs() {
+                const savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                if (savedConfigs.length === 0) {
+                    alert('没有可导出的配置！');
+                    return;
+                }
+
+                const dataStr = JSON.stringify(savedConfigs, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `三体模拟器配置_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                
+                URL.revokeObjectURL(link.href);
+                alert('配置已导出！');
+            }
+
+            importConfigs(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importedConfigs = JSON.parse(e.target.result);
+                        
+                        if (!Array.isArray(importedConfigs)) {
+                            throw new Error('配置文件格式不正确');
+                        }
+
+                        // 验证配置格式
+                        for (const config of importedConfigs) {
+                            if (!config.name || !config.bodies || !Array.isArray(config.bodies) || config.bodies.length !== 3) {
+                                throw new Error('配置文件格式不正确');
+                            }
+                        }
+
+                        // 合并配置（避免重复）
+                        let savedConfigs = JSON.parse(localStorage.getItem('customConfigs') || '[]');
+                        const existingNames = savedConfigs.map(config => config.name);
+                        
+                        let importedCount = 0;
+                        for (const config of importedConfigs) {
+                            if (!existingNames.includes(config.name)) {
+                                savedConfigs.push(config);
+                                importedCount++;
+                            }
+                        }
+
+                        localStorage.setItem('customConfigs', JSON.stringify(savedConfigs));
+                        this.updateCustomConfigButtons();
+                        
+                        alert(`成功导入 ${importedCount} 个配置！${importedConfigs.length - importedCount > 0 ? `跳过 ${importedConfigs.length - importedCount} 个重复配置。` : ''}`);
+                        
+                    } catch (error) {
+                        alert('导入失败：' + error.message);
+                    }
+                };
+                
+                reader.readAsText(file);
+                event.target.value = ''; // 清空文件输入
+            }
+
+            reset() {
+                this.createBodies();
+                this.timeSpeed = 1.0;
+                this.updateSpeedDisplay();
+                this.isRunning = true;
+                document.getElementById('playPause').textContent = '暂停';
+            }
+
+            setupResizeObserver() {
+                const controlsPanel = document.getElementById('controls');
+                
+                // 使用ResizeObserver监听面板大小变化
+                if (window.ResizeObserver) {
+                    const resizeObserver = new ResizeObserver(entries => {
+                        for (let entry of entries) {
+                            const { width } = entry.contentRect;
+                            const controlGroups = controlsPanel.querySelectorAll('.control-group');
+                            
+                            // 根据宽度动态调整样式
+                            if (width < 350) {
+                                controlGroups.forEach(group => {
+                                    group.classList.add('compact');
+                                });
+                            } else {
+                                controlGroups.forEach(group => {
+                                    group.classList.remove('compact');
+                                });
+                            }
+                        }
+                    });
+                    
+                    resizeObserver.observe(controlsPanel);
+                }
+                
+                // 添加鼠标悬停效果增强
+                controlsPanel.addEventListener('mouseenter', () => {
+                    controlsPanel.style.transform = 'scale(1.02)';
+                });
+                
+                controlsPanel.addEventListener('mouseleave', () => {
+                    controlsPanel.style.transform = 'scale(1)';
+                });
+
+                // 添加控制面板的鼠标缩放功能
+                controlsPanel.addEventListener('wheel', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    const computedStyle = window.getComputedStyle(controlsPanel);
+                    const currentWidth = parseInt(computedStyle.width);
+                    const currentHeight = parseInt(computedStyle.height);
+                    
+                    // 计算缩放因子
+                    const scaleFactor = event.deltaY > 0 ? 0.95 : 1.05;
+                    
+                    // 计算新的尺寸
+                    let newWidth = currentWidth * scaleFactor;
+                    let newHeight = currentHeight * scaleFactor;
+                    
+                    // 应用尺寸限制
+                    newWidth = Math.max(320, Math.min(600, newWidth));
+                    const maxHeight = window.innerHeight * 0.85;
+                    newHeight = Math.max(200, Math.min(maxHeight, newHeight));
+                    
+                    // 应用新尺寸
+                    controlsPanel.style.width = newWidth + 'px';
+                    controlsPanel.style.height = newHeight + 'px';
+                });
+                
+                // 添加尺寸限制检查
+                const checkSizeLimits = () => {
+                    const computedStyle = window.getComputedStyle(controlsPanel);
+                    const width = parseInt(computedStyle.width);
+                    const height = parseInt(computedStyle.height);
+                    
+                    // 检查并强制执行最小尺寸
+                    if (width < 320) {
+                        controlsPanel.style.width = '320px';
+                    }
+                    if (height < 200) {
+                        controlsPanel.style.height = '200px';
+                    }
+                    
+                    // 检查并强制执行最大尺寸
+                    if (width > 600) {
+                        controlsPanel.style.width = '600px';
+                    }
+                    const maxHeight = window.innerHeight * 0.85;
+                    if (height > maxHeight) {
+                        controlsPanel.style.height = maxHeight + 'px';
+                    }
+                };
+                
+                // 监听窗口大小变化
+                window.addEventListener('resize', checkSizeLimits);
+                
+                // 使用MutationObserver监听style属性变化
+                const observer = new MutationObserver(checkSizeLimits);
+                observer.observe(controlsPanel, { 
+                    attributes: true, 
+                    attributeFilter: ['style'] 
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.frameCount++; // 增加帧计数
+                this.updatePhysics();
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        // 启动模拟器
+        let simulator;
+        window.addEventListener('load', () => {
+            simulator = new ThreeBodySimulator3D();
+        });
+    </script>
+</body>
+</html>
